@@ -25,19 +25,33 @@ data_buffer_t data_buffer = {
 
 char producers_active = 1;
 pthread_mutex_t buffer_mutex;
+sem_t buffer_put_sem, buffer_get_sem;
+
+void buffer_put(unsigned long value){
+    pthread_mutex_lock(&buffer_mutex);
+    data_buffer.buffer[data_buffer.in_index] = value;
+    data_buffer.in_index = (data_buffer.in_index+1) % BUFFER_LENGTH;
+    data_buffer.cant_elem++;
+    pthread_mutex_unlock(&buffer_mutex);
+}
+
+unsigned long buffer_get(void){
+    unsigned long ret;
+    pthread_mutex_lock(&buffer_mutex);
+    ret = data_buffer.buffer[data_buffer.out_index];
+    data_buffer.out_index = (data_buffer.out_index+1) % BUFFER_LENGTH;
+    data_buffer.cant_elem--;
+    pthread_mutex_unlock(&buffer_mutex);
+    return ret;
+}
 
 void* producer(void* arg){
     int iloop;
     
     for (iloop = 0; iloop < TOTAL_DATA; iloop++){
-
-        while (data_buffer.cant_elem >= BUFFER_LENGTH){}
-        
-        pthread_mutex_lock(&buffer_mutex);
-        data_buffer.buffer[data_buffer.in_index] = iloop+1;
-        data_buffer.in_index = (data_buffer.in_index+1) % BUFFER_LENGTH;
-        data_buffer.cant_elem++;
-        pthread_mutex_unlock(&buffer_mutex);
+        sem_wait(&buffer_put_sem);
+        buffer_put(iloop+1);
+        sem_post(&buffer_get_sem);
     }
 
     pthread_exit(NULL);
@@ -48,14 +62,10 @@ void* consumer(void* arg){
     unsigned long *sum = (unsigned long *)arg;
     *sum = 0;
     
-    while (producers_active){
-        if(data_buffer.cant_elem > 0){
-            pthread_mutex_lock(&buffer_mutex);
-            *sum += data_buffer.buffer[data_buffer.out_index];
-            data_buffer.out_index = (data_buffer.out_index+1) % BUFFER_LENGTH;
-            data_buffer.cant_elem--;
-            pthread_mutex_unlock(&buffer_mutex);
-        }
+    while (producers_active || data_buffer.cant_elem > 0){
+        sem_wait(&buffer_get_sem);
+        *sum += buffer_get();
+        sem_post(&buffer_put_sem);
     }
 
     pthread_exit(NULL);
@@ -70,6 +80,8 @@ int main(void){
     pthread_t tid_p[CANT_PRODUCERS], tid_c[CANT_CONSUMERS];
 
     pthread_mutex_init(&buffer_mutex, NULL);
+    sem_init(&buffer_get_sem, 0, 0);
+    sem_init(&buffer_put_sem, 0, BUFFER_LENGTH);
 
     for(iloop = 0; iloop<CANT_PRODUCERS; iloop++){
         pthread_create(tid_p+iloop, NULL, producer, NULL);
