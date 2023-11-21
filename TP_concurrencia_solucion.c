@@ -6,7 +6,7 @@
 #define BUFFER_LENGTH 8
 #define TOTAL_DATA 1000
 #define CANT_PRODUCERS 2
-#define CANT_CONSUMERS 2
+#define CANT_CONSUMERS 5
 
 typedef struct
 {
@@ -23,9 +23,10 @@ data_buffer_t data_buffer = {
     .cant_elem = 0
 };
 
-char producers_active = 1;
-pthread_mutex_t buffer_mutex;
+int data_consumed = CANT_PRODUCERS*TOTAL_DATA;
+pthread_mutex_t buffer_mutex, consumed_mutex;
 sem_t buffer_put_sem, buffer_get_sem;
+pthread_t tid_p[CANT_PRODUCERS], tid_c[CANT_CONSUMERS];
 
 void buffer_put(unsigned long value){
     pthread_mutex_lock(&buffer_mutex);
@@ -58,15 +59,23 @@ void* producer(void* arg){
 }
 
 void* consumer(void* arg){
-    int iloop;
+    int iloop=0;
     unsigned long *sum = (unsigned long *)arg;
     *sum = 0;
     
-    while (producers_active || data_buffer.cant_elem > 0){
+    while (data_consumed){
         sem_wait(&buffer_get_sem);
-        *sum += buffer_get();
-        sem_post(&buffer_put_sem);
-    }
+        if(data_consumed){
+            *sum += buffer_get();
+            sem_post(&buffer_put_sem);
+
+            pthread_mutex_lock(&consumed_mutex);
+            data_consumed--;
+            pthread_mutex_unlock(&consumed_mutex);
+        }
+    }  
+
+    sem_post(&buffer_get_sem);
 
     pthread_exit(NULL);
 }
@@ -77,9 +86,9 @@ int main(void){
     unsigned long sum = 0;
     unsigned long sum_c[CANT_CONSUMERS] = {0};
     unsigned long sum_c_total = 0;
-    pthread_t tid_p[CANT_PRODUCERS], tid_c[CANT_CONSUMERS];
 
     pthread_mutex_init(&buffer_mutex, NULL);
+    pthread_mutex_init(&consumed_mutex, NULL);
     sem_init(&buffer_get_sem, 0, 0);
     sem_init(&buffer_put_sem, 0, BUFFER_LENGTH);
 
@@ -94,8 +103,6 @@ int main(void){
     for(iloop = 0; iloop<CANT_PRODUCERS; iloop++){
         pthread_join(tid_p[iloop], NULL);
     }
-
-    producers_active = 0;
 
     for(iloop = 0; iloop<CANT_CONSUMERS; iloop++){
         pthread_join(tid_c[iloop], NULL);
