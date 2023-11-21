@@ -74,9 +74,7 @@ void* consumer(void* arg){
             pthread_mutex_unlock(&consumed_mutex);
         }
     }  
-
     sem_post(&buffer_get_sem);
-
     pthread_exit(NULL);
 }
 

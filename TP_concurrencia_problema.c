@@ -24,16 +24,26 @@ data_buffer_t data_buffer = {
 
 char producers_active = 1;
 
+void buffer_put(unsigned long value){
+    data_buffer.buffer[data_buffer.in_index] = value;
+    data_buffer.in_index = (data_buffer.in_index+1) % BUFFER_LENGTH;
+    data_buffer.cant_elem++;
+}
+
+unsigned long buffer_get(void){
+    unsigned long ret;
+    ret = data_buffer.buffer[data_buffer.out_index];
+    data_buffer.out_index = (data_buffer.out_index+1) % BUFFER_LENGTH;
+    data_buffer.cant_elem--;
+    return ret;
+}
+
 void* producer(void* arg){
     int iloop;
     
     for (iloop = 0; iloop < TOTAL_DATA; iloop++){
-
-        while (data_buffer.cant_elem >= BUFFER_LENGTH){}
-        
-        data_buffer.buffer[data_buffer.in_index] = iloop+1;
-        data_buffer.in_index = (data_buffer.in_index+1) % BUFFER_LENGTH;
-        data_buffer.cant_elem++;
+        while (data_buffer.cant_elem >= BUFFER_LENGTH){}   
+        buffer_put(iloop+1);
     }
 
     pthread_exit(NULL);
@@ -46,9 +56,7 @@ void* consumer(void* arg){
     
     while (producers_active){
         if(data_buffer.cant_elem > 0){
-            *sum += data_buffer.buffer[data_buffer.out_index];
-            data_buffer.out_index = (data_buffer.out_index+1) % BUFFER_LENGTH;
-            data_buffer.cant_elem--;
+            *sum += buffer_get();
         }
     }
 
